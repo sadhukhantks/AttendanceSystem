@@ -7,7 +7,6 @@ DB_CONFIG = {
     "user":        "myroot",
     "password":    "deb#9876",
     "database":    "sjm",
-    "ssl_disabled": True
 }
 
 # ── Auth database (login / signup) ───────────────────────────
@@ -16,7 +15,6 @@ AUTH_DB_CONFIG = {
     "user":        "myroot",
     "password":    "deb#9876",
     "database":    "sjm",
-    "ssl_disabled": True
 }
 
 def get_db():
