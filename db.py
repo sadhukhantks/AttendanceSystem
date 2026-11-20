@@ -3,7 +3,7 @@ import mysql.connector
 
 # ── Main database (attendance, employees, masters) ────────────
 DB_CONFIG = {
-    "host":        "45.58.59.119",
+    "host":        "189.72.144.77",
     "user":        "myroot",
     "password":    "deb#9876",
     "database":    "sjm",
@@ -12,7 +12,7 @@ DB_CONFIG = {
 
 # ── Auth database (login / signup) ───────────────────────────
 AUTH_DB_CONFIG = {
-    "host":        "45.58.59.119",
+    "host":        "189.72.144.77",
     "user":        "myroot",
     "password":    "deb#9876",
     "database":    "sjm",

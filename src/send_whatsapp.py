@@ -44,6 +44,15 @@ DEFAULT_MESSAGE = "Record Saved"
 # -----------------------------------------------------------------------------
 
 
+def clean_number(mobno):
+    """Normalise a recipient number to Cloud API form: digits only, no +.
+    A bare 10-digit local number gets WHATSAPP_DEFAULT_CC (default 91) prepended."""
+    digits = ''.join(ch for ch in str(mobno or '') if ch.isdigit())
+    if len(digits) == 10:
+        digits = os.environ.get('WHATSAPP_DEFAULT_CC', '91') + digits
+    return digits or None
+
+
 def send_text(to, body):
     """Send a plain-text WhatsApp message. Returns (ok, response_text).
 
@@ -57,12 +66,24 @@ def send_text(to, body):
         return False, "No token set. Edit .env (WHATSAPP_TOKEN) or set the env var."
 
     url = "https://graph.facebook.com/%s/%s/messages" % (version, phone_id)
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": body},
-    }
+    template = os.getenv("WHATSAPP_TEXT_TEMPLATE_NAME", "").strip()
+    if template:
+        # Approved template with one body variable {{1}} = the message: reaches
+        # recipients outside Meta's 24h window. Meta rejects newlines/tabs in params.
+        param = " ".join(str(body).split())
+        payload = {"messaging_product": "whatsapp", "to": to, "type": "template",
+                   "template": {
+                       "name": template,
+                       "language": {"code": os.getenv("WHATSAPP_TEMPLATE_LANG", "en_US")},
+                       "components": [{"type": "body", "parameters": [{"type": "text", "text": param}]}],
+                   }}
+    else:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "text",
+            "text": {"body": body},
+        }
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -145,10 +166,23 @@ def send_document(to, file_path, caption=None, filename=None):
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", PHONE_NUMBER_ID)
     version  = os.getenv("WHATSAPP_API_VERSION", API_VERSION)
     document = {"id": media_id, "filename": filename or os.path.basename(file_path)}
-    if caption:
-        document["caption"] = caption
-    payload = {"messaging_product": "whatsapp", "to": to, "type": "document",
-               "document": document}
+    template = os.getenv("WHATSAPP_TEMPLATE_NAME", "").strip()
+    if template:
+        # Approved template (Document header + one body variable {{1}} = caption):
+        # reaches recipients outside Meta's 24h window, no "hi" needed first.
+        payload = {"messaging_product": "whatsapp", "to": to, "type": "template",
+                   "template": {
+                       "name": template,
+                       "language": {"code": os.getenv("WHATSAPP_TEMPLATE_LANG", "en_US")},
+                       "components": [
+                           {"type": "header", "parameters": [{"type": "document", "document": document}]},
+                           {"type": "body", "parameters": [{"type": "text", "text": caption or document["filename"]}]},
+                       ]}}
+    else:
+        if caption:
+            document["caption"] = caption
+        payload = {"messaging_product": "whatsapp", "to": to, "type": "document",
+                   "document": document}
     url = "https://graph.facebook.com/%s/%s/messages" % (version, phone_id)
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode("utf-8"), method="POST",

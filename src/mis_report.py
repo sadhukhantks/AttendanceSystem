@@ -28,6 +28,7 @@ from fpdf import FPDF
 
 from db import get_db
 from src.send_email import send_document
+from src import send_whatsapp
 
 NUM_PERIODS = 8
 TOTAL_COL_INDEX = NUM_PERIODS - 1   # last column is the computed Total
@@ -489,14 +490,49 @@ def mis_recipients():
     return emails
 
 
-def send_daily_mis_report(report_date, recipients=None):
-    """Build the company-wide MIS Report PDF for report_date and email it.
+def mis_whatsapp_numbers():
+    """Distinct WhatsApp numbers (mobno) of every msg_for=MIS row."""
+    code = os.getenv('MIS_REPORT_MSG_FOR', 'MIS').strip() or 'MIS'
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT mobno FROM tbl_whatsapp_send WHERE msg_for = %s", (code,))
+    rows = cur.fetchall()
+    cur.close(); db.close()
+    return _clean_numbers(r[0] for r in rows)
 
-    recipients = explicit emails (per-recipient scheduler); None = all msg_for='MIS'.
+
+def _clean_numbers(raw):
+    numbers = []
+    for m in raw:
+        for part in str(m or '').split(','):
+            num = send_whatsapp.clean_number(part)
+            if num and num not in numbers:
+                numbers.append(num)
+    return numbers
+
+
+def send_daily_mis_report(report_date, recipients=None, numbers=None):
+    """Build the company-wide MIS Report PDF for report_date, email it and send
+    it on WhatsApp.
+
+    recipients / numbers = explicit emails / WhatsApp numbers (per-recipient
+    scheduler); both None (manual run) = every msg_for='MIS' row.
     """
     date_str = report_date.strftime('%Y-%m-%d')
-    emails = [e for e in recipients if e] if recipients is not None else mis_recipients()
-    if not emails:
+    manual = recipients is None and numbers is None
+    emails = mis_recipients() if manual else [e for e in (recipients or []) if e]
+    wa_on = os.getenv('MIS_REPORT_WHATSAPP', '1') == '1'
+    if not wa_on:
+        numbers = []
+    elif manual:
+        try:
+            numbers = mis_whatsapp_numbers()
+        except Exception as ex:
+            print('MIS report: WhatsApp recipient lookup failed:', ex)
+            numbers = []
+    else:
+        numbers = _clean_numbers(numbers or [])
+    if not emails and not numbers:
         print('MIS report: no recipients; skipping', date_str)
         return
 
@@ -519,6 +555,9 @@ def send_daily_mis_report(report_date, recipients=None):
     for email in emails:
         ok, info = send_document(email, out_path, subject=caption, body=body, filename=fname)
         print('MIS report: email to', email, '->', 'OK' if ok else 'FAILED', '|', info)
+    for num in numbers:
+        ok, info = send_whatsapp.send_document(num, out_path, caption=caption, filename=fname)
+        print('MIS report: WhatsApp to', num, '->', 'OK' if ok else 'FAILED', '|', info)
     try:
         os.remove(out_path)
     except Exception:
@@ -530,14 +569,34 @@ def send_daily_mis_report(report_date, recipients=None):
 _scheduler = None
 
 
+def _mis_tick():
+    """Per-minute tick: email the rows whose email_id is due and WhatsApp the
+    rows whose mobno is due (each row's own sch_times; 'P' = previous day).
+    A row with only a mobno (no email) still gets its WhatsApp."""
+    from src.spg_report import due_recipients
+    t_mail, p_mail = due_recipients('MIS')
+    t_wa, p_wa = due_recipients('MIS', 'mobno')
+    for d, mails, nums in ((date.today(), t_mail, t_wa),
+                           (date.today() - timedelta(days=1), p_mail, p_wa)):
+        if mails or nums:
+            try:
+                send_daily_mis_report(d, mails, nums)
+            except Exception as ex:
+                print('MIS report: run failed:', ex)
+
+
 def start_mis_scheduler():
     """Start the MIS Report scheduler. Times from tbl_whatsapp_send.sch_times
     (msg_for='MIS'). Idempotent per process."""
     global _scheduler
     if _scheduler is not None:
         return _scheduler
-    from src.spg_report import start_report_scheduler
-    _scheduler = start_report_scheduler('MIS report', 'MIS', send_daily_mis_report, 'mis')
+    from apscheduler.schedulers.background import BackgroundScheduler
+    _scheduler = BackgroundScheduler(daemon=True)
+    _scheduler.add_job(_mis_tick, 'cron', minute='*', id='mis_tick',
+                       replace_existing=True, max_instances=1, misfire_grace_time=55)
+    _scheduler.start()
+    print('MIS report scheduler started (per-recipient email + WhatsApp, msg_for=MIS)')
     return _scheduler
 
 

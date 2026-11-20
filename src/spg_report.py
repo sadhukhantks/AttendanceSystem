@@ -678,8 +678,9 @@ def scheduled_times(msg_for):
     return today, prev
 
 
-def due_recipients(msg_for):
+def due_recipients(msg_for, column='email_id'):
     """Recipients due at the CURRENT minute, per row (per-recipient scheduling).
+    column='mobno' returns due WhatsApp numbers instead of emails.
 
     Each tbl_whatsapp_send row carries its own sch_times, so the same report
     (msg_for) can reach different people at different times. Returns
@@ -693,9 +694,11 @@ def due_recipients(msg_for):
         db = get_db()
         cur = db.cursor()
         ph = ','.join(['%s'] * len(codes))
-        cur.execute("SELECT email_id, sch_times FROM tbl_whatsapp_send "
-                    "WHERE msg_for IN (%s) AND email_id IS NOT NULL AND email_id <> '' "
-                    "AND sch_times IS NOT NULL AND sch_times <> ''" % ph, tuple(codes))
+        assert column in ('email_id', 'mobno')
+        cur.execute("SELECT %s, sch_times FROM tbl_whatsapp_send "
+                    "WHERE msg_for IN (%s) AND %s IS NOT NULL AND %s <> '' "
+                    "AND sch_times IS NOT NULL AND sch_times <> ''"
+                    % (column, ph, column, column), tuple(codes))
         rows = cur.fetchall()
         cur.close(); db.close()
     except Exception as ex:

@@ -17,7 +17,7 @@ from datetime import datetime, date as date_cls
 
 from flask import Blueprint, request, jsonify
 from db import get_db
-from src.send_whatsapp import send_text
+from src.send_whatsapp import send_text, clean_number as _wa_clean_number
 
 doff_bp = Blueprint('doff', __name__)
 
@@ -36,21 +36,6 @@ def _to_str(v):
 
 
 # â”€â”€ WhatsApp notify (Meta Cloud API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-def _wa_clean_number(mobno):
-    """Normalise a recipient number to Cloud API form: digits only, no +.
-
-    A bare 10-digit local number gets the default country code (WHATSAPP_DEFAULT_CC,
-    default 91) prepended so Meta can route it.
-    """
-    if not mobno:
-        return None
-    digits = ''.join(ch for ch in str(mobno) if ch.isdigit())
-    if not digits:
-        return None
-    if len(digits) == 10:
-        digits = os.environ.get('WHATSAPP_DEFAULT_CC', '91') + digits
-    return digits
 
 
 def _doff_frame_no(mc_id):

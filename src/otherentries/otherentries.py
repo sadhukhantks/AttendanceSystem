@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import request, jsonify, send_file
 from . import otherentries_bp
 from src.database import get_db
-from src.send_whatsapp import send_text
+from src.send_whatsapp import send_text, clean_number as _wa_clean_number
 
 
 _MIGRATED = False
@@ -20,19 +20,6 @@ _NOTIFY_FIELDS = [
     ('heracle', 'Heracle'), ('cutting', 'Cutting'), ('branding', 'Branding'),
     ('hand_sewer', 'Hand Sewer'), ('bales', 'Bales'), ('issue_bales', 'Issue Bales'),
 ]
-
-
-def _wa_clean_number(mobno):
-    """Digits only; bare 10-digit numbers get the default country code."""
-    import os
-    if not mobno:
-        return None
-    digits = ''.join(ch for ch in str(mobno) if ch.isdigit())
-    if not digits:
-        return None
-    if len(digits) == 10:
-        digits = os.environ.get('WHATSAPP_DEFAULT_CC', '91') + digits
-    return digits
 
 
 def _notify_other_entry(action, tran_date, spell_id, values):
